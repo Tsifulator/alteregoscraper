@@ -1,0 +1,13 @@
+# Secrets — never commit (set these as Railway env vars instead)
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local runtime artifacts
+logs/
+
+# NOTE: sent_companies.json IS committed on purpose — GitHub Actions persists the
+# dedup state by committing it back to the repo after each run.

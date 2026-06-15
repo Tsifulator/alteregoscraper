@@ -1,0 +1,45 @@
+name: ALTER EGO lead scraper
+
+on:
+  schedule:
+    # 05:00 & 15:00 UTC = 08:00 & 18:00 Athens in summer (EEST/UTC+3).
+    # GitHub cron is UTC-only, so it drifts to 07:00/17:00 Athens in winter.
+    - cron: "0 5,15 * * *"
+  workflow_dispatch: {}        # adds a manual "Run workflow" button for testing
+
+permissions:
+  contents: write              # needed to commit the updated sent-log back
+
+concurrency:
+  group: scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          LLM_BACKEND: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: python main.py
+
+      - name: Persist sent-log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_companies.json
+          git commit -m "chore: update sent-log [skip ci]" || echo "no new leads to record"
+          git push
