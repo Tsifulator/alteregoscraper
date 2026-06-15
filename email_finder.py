@@ -33,7 +33,15 @@ DEPARTMENTS = [
 ]
 
 BAD_SUBSTRINGS = ("example.", "sentry.", "wixpress.", "@2x", ".png", ".jpg",
-                  ".svg", ".gif", "@sentry", "godaddy", "domain.com")
+                  ".svg", ".gif", "@sentry", "godaddy", "domain.com",
+                  # template / placeholder addresses that aren't real contacts
+                  "your-name", "yourname", "your.name", "your_name", "yourcompany",
+                  "your-email", "youremail", "your.email", "your_email",
+                  "firstname", "lastname", "first.last", "name.surname",
+                  "john.doe", "jane.doe", "johndoe", "janedoe",
+                  "@email.com", "@yourdomain", "@example", "@domain.",
+                  "@company.com", "@test.", "@mydomain",
+                  "noreply", "no-reply", "donotreply", "do-not-reply")
 
 
 def _fetch(url: str, timeout: int = 8) -> str:

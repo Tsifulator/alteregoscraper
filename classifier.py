@@ -106,7 +106,13 @@ def classify_candidate(candidate: dict) -> dict | None:
     company = (data.get("company") or candidate.get("name") or "").strip()
     if not company:
         return None
-    if company.lower() in EXISTING_CLIENTS:
+    # Exclude existing clients: exact match on short codes (ey, bms, snf) +
+    # substring match for distinctive multi-word names (catches "Stavros Niarchos
+    # Park", "Estée Lauder Hellas", etc. — not just the exact stored string).
+    company_norm = company.lower()
+    if company_norm in EXISTING_CLIENTS or any(
+        " " in c and c in company_norm for c in EXISTING_CLIENTS
+    ):
         return None
 
     # Seed candidates carry their domain; news leads borrow one if we already

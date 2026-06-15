@@ -37,4 +37,5 @@ EXISTING_CLIENTS = {
     "bristol myers squibb", "bms", "ernst & young", "ey", "estée lauder",
     "estee lauder", "iatriko athinon", "ιατρικό αθηνών", "grecotel", "snfcc",
     "stavros niarchos foundation cultural center", "ίδρυμα σταύρος νιάρχος",
+    "stavros niarchos", "σταύρος νιάρχος", "snf",
 }
