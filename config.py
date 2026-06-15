@@ -26,14 +26,19 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
 
-# --- Gemini (cloud fallback — FREE tier: ~1,500 req/day, no card) ---
+# --- Gemini (cloud fallback — small free tier: gemini-2.5-flash is 20 req/day) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# --- Groq (PRIMARY cloud backend — FREE tier: 1,000 req/day, no card) ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # --- Email (Gmail SMTP) ---
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "tsiflik@bc.edu")
+CC_EMAIL = os.getenv("CC_EMAIL", "").strip()   # optional, comma-separated extra recipients
 
 # --- Volume ---
 # Twice-daily runs × 5 = 10 fresh companies per day.

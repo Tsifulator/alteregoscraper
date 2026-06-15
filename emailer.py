@@ -4,7 +4,7 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, RECIPIENT_EMAIL, DRY_RUN, LOGS_DIR
+from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, RECIPIENT_EMAIL, CC_EMAIL, DRY_RUN, LOGS_DIR
 
 CRITERIA_LABEL = {
     "brand_name": ("BRAND NAME", "badge-brand"),
@@ -195,8 +195,12 @@ def send_digest(leads: list[dict]) -> None:
     msg["Subject"] = subject
     msg["From"] = GMAIL_ADDRESS
     msg["To"] = RECIPIENT_EMAIL
+    recipients = [RECIPIENT_EMAIL]
+    if CC_EMAIL:
+        msg["Cc"] = CC_EMAIL
+        recipients += [e.strip() for e in CC_EMAIL.split(",") if e.strip()]
     msg.attach(MIMEText(html, "html"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_ADDRESS, RECIPIENT_EMAIL, msg.as_string())
-    print(f"[OK] Digest sent to {RECIPIENT_EMAIL}")
+        server.sendmail(GMAIL_ADDRESS, recipients, msg.as_string())
+    print(f"[OK] Digest sent to {RECIPIENT_EMAIL}" + (f" (cc: {CC_EMAIL})" if CC_EMAIL else ""))
