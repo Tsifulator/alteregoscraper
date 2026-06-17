@@ -21,6 +21,42 @@ CONTACT_PATHS = ["", "/contact", "/contact-us", "/contactus", "/epikoinonia",
 ROLE_PRIORITY = ["info", "contact", "epikoinonia", "hr", "careers", "press",
                  "office", "sales", "facilities", "procurement", "hello"]
 
+# Local-parts that are role addresses, NOT person names.
+_ROLE_LOCALS = {
+    "info", "contact", "hr", "procurement", "facilities", "facility",
+    "sales", "support", "office", "press", "careers", "jobs", "hello",
+    "admin", "marketing", "finance", "operations", "ops", "logistics",
+    "general", "management", "accounting", "complaints", "noreply",
+    "no-reply", "webmaster", "postmaster", "abuse", "security",
+    "billing", "legal", "reception", "helpdesk", "service", "team",
+    "enquiries", "inquiries", "information", "purchasing", "technical",
+    "maintenance", "epikoinonia", "promitheies", "oikonomiko",
+}
+
+
+def name_from_email(email: str) -> str | None:
+    """Try to extract a person's name from an email prefix.
+    Returns 'First Last' or 'F. Lastname' or None."""
+    local = email.split("@")[0].lower()
+    if local in _ROLE_LOCALS or any(local.startswith(r) for r in _ROLE_LOCALS):
+        return None
+
+    # firstname.lastname@ or firstname_lastname@
+    parts = re.split(r"[._]", local)
+    if len(parts) == 2:
+        first, last = parts
+        if len(first) >= 2 and len(last) >= 2 and first.isalpha() and last.isalpha():
+            return f"{first.capitalize()} {last.capitalize()}"
+
+    # flastname@ (initial + surname)
+    if len(local) >= 4 and local.isalpha() and local not in _ROLE_LOCALS:
+        initial = local[0]
+        rest = local[1:]
+        if len(rest) >= 3 and rest not in _ROLE_LOCALS:
+            return f"{initial.upper()}. {rest.capitalize()}"
+
+    return None
+
 # Departments ALTER EGO wants to reach. For each, role local-parts (EN+GR) we
 # try to match against scraped on-domain addresses, else guess role@domain.
 DEPARTMENTS = [
@@ -127,9 +163,20 @@ def _departments(domain: str | None, info: dict) -> list[dict]:
 def find_contacts(domain: str | None) -> dict:
     """find_email(...) plus a 'departments' list — one best-effort email per
     target department (Procurement, HR, Facility Management, Finance, etc.).
-    All emails UNVERIFIED; department addresses are mostly role@domain guesses."""
+    All emails UNVERIFIED; department addresses are mostly role@domain guesses.
+    Also extracts person names from email prefixes where possible."""
     info = find_email(domain)
     info["departments"] = _departments(domain, info)
+
+    # Extract contact names from email prefixes
+    info["contact_names"] = {}
+    all_emails = [info["email"]] + info.get("others", [])
+    all_emails += [d["email"] for d in info.get("departments", [])]
+    for email in all_emails:
+        if email:
+            name = name_from_email(email)
+            if name:
+                info["contact_names"][email] = name
     return info
 
 
