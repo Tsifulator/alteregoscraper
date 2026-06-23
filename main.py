@@ -55,6 +55,8 @@ def run():
         lead["method"] = info["method"]
         lead["email_others"] = info["others"]
         lead["departments"] = info["departments"]
+        lead["contact_people"] = info.get("people", [])
+        lead["contact_names"] = info.get("contact_names", {})
 
         # Optional enrichment.
         lead.update(maps_enrich(lead["company"]))           # Nominatim (free, always on)

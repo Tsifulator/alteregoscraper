@@ -45,6 +45,8 @@ EMAIL_TEMPLATE = """<!DOCTYPE html>
   .contact {{ background:#f6f8fa; border-radius:7px; padding:9px 12px; font-size:13px; margin-top:10px; }}
   .contact a {{ color:#1a56c4; text-decoration:none; }}
   .unverified {{ color:#b06a00; font-size:11px; font-style:italic; }}
+    .people {{ margin-top:8px; padding-top:8px; border-top:1px dashed #e6e9ee; font-size:12.5px; color:#33414f; }}
+    .people b {{ color:#0b2e4f; }}
   .depts {{ margin-top:10px; border-top:1px dashed #e6e9ee; padding-top:9px; }}
   .depts-h {{ font-size:10px; font-weight:700; color:#7a8694; text-transform:uppercase; letter-spacing:.4px; margin:0 0 6px; }}
   .dept {{ font-size:12.5px; line-height:1.5; margin:2px 0; color:#33414f; }}
@@ -74,6 +76,7 @@ LEAD_BLOCK = """<div class="lead">
   <p class="row why"><b>What would interest them:</b> {why_interest}</p>
   <p class="row offer"><b>What we'd provide:</b> {what_we_provide}</p>
   <div class="contact">✉️ <b>Contact:</b> {contact_html}</div>
+    {people_html}
   {depts_html}
 </div>"""
 
@@ -119,6 +122,27 @@ def _contact_html(lead: dict) -> str:
     extra = f' · alts: {", ".join(others)}' if others else ""
     return (f'<a href="mailto:{email}">{email}</a> '
             f'<span class="unverified">({note}){extra}</span>')
+
+
+def _people_html(lead: dict) -> str:
+    people = lead.get("contact_people") or []
+    if not people:
+        return ""
+    rows = []
+    seen = set()
+    for person in people:
+        name = (person.get("name") or "").strip()
+        email = (person.get("email") or "").strip()
+        # Only show people backed by a real email. Bare names scraped from page
+        # text are too noisy (nav/marketing phrases like "Accessibility Statement")
+        # and were rendering as junk "people found".
+        if not name or not email or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        rows.append(f'<div><b>{name}</b> <a href="mailto:{email}">{email}</a></div>')
+    if not rows:
+        return ""
+    return '<div class="people"><b>People found:</b>' + "".join(rows) + "</div>"
 
 
 def _departments_html(lead: dict) -> str:
@@ -172,6 +196,7 @@ def build_html(leads: list[dict]) -> str:
             why_interest=lead.get("why_interest", ""),
             what_we_provide=lead.get("what_we_provide", ""),
             contact_html=_contact_html(lead),
+            people_html=_people_html(lead),
             depts_html=_departments_html(lead),
         )
     return EMAIL_TEMPLATE.format(
