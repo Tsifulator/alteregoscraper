@@ -46,6 +46,11 @@ COMPANIES_PER_RUN = int(os.getenv("COMPANIES_PER_RUN", "5"))
 # How many raw candidates to feed the classifier before giving up on a run.
 MAX_CANDIDATES_TO_SCAN = int(os.getenv("MAX_CANDIDATES_TO_SCAN", "40"))
 
+# After crawling a company's site, run one extra LLM pass that reads the scraped
+# team/leadership/contact text and names the actual PERSON per target department
+# (Procurement, HR, FM, Finance, Mgmt, Ops). One call per company; fail-soft.
+LLM_DEPARTMENT_NAMES = os.getenv("LLM_DEPARTMENT_NAMES", "true").lower() == "true"
+
 # If true, write the digest HTML to logs/ instead of emailing (for testing).
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 

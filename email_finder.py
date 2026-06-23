@@ -10,10 +10,13 @@ All results are UNVERIFIED and flagged as such — sanity-check before outreach.
 """
 import re
 import json
+import unicodedata
 import urllib.request
 from collections import deque
 from html import unescape
 from urllib.parse import urljoin, urlparse
+
+from config import LLM_DEPARTMENT_NAMES
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 MAILTO_RE = re.compile(r'mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})', re.I)
@@ -356,10 +359,12 @@ def _clean(emails: set[str], domain: str) -> list[str]:
 def find_email(domain: str | None) -> dict:
     """Return {'email': str|None, 'verified': False, 'method': str, 'others': [...]}."""
     if not domain:
-        return {"email": None, "verified": False, "method": "no-domain", "others": [], "people": []}
+        return {"email": None, "verified": False, "method": "no-domain",
+                "others": [], "people": [], "_corpus": []}
 
     found: set[str] = set()
     people: dict[str, dict] = {}
+    corpus: list[tuple[str, str]] = []     # (url, page text) for the LLM dept pass
     pages = _safe_fetch_candidates(domain)
     if not pages:
         pages = [(f"https://{domain}", "")]
@@ -377,6 +382,8 @@ def find_email(domain: str | None) -> dict:
             if existing.get("source") == "jsonld":
                 existing["source"] = page_url
         text = _html_to_text(html)
+        if text:
+            corpus.append((page_url, text))
         for name in _extract_names(text):
             people.setdefault(name.lower(), {"name": name, "email": None, "source": page_url})
 
@@ -406,13 +413,137 @@ def find_email(domain: str | None) -> dict:
 
     if on_domain:
         return {"email": on_domain[0], "verified": False, "method": "scraped",
-                "others": on_domain[1:6], "people": people_list}
+                "others": on_domain[1:6], "people": people_list, "_corpus": corpus}
     if ranked:
         return {"email": ranked[0], "verified": False, "method": "scraped-offdomain",
-                "others": ranked[1:6], "people": people_list}
+                "others": ranked[1:6], "people": people_list, "_corpus": corpus}
     # Fallback: the Greek-corporate default.
     return {"email": f"info@{domain}", "verified": False, "method": "pattern-guess",
-            "others": [f"hr@{domain}", f"contact@{domain}"], "people": people_list}
+            "others": [f"hr@{domain}", f"contact@{domain}"], "people": people_list,
+            "_corpus": corpus}
+
+
+# --- LLM department-name pass -------------------------------------------------
+# Reads the scraped team/leadership/contact text and names the actual person per
+# department. Grounded: a returned name is kept ONLY if it literally appears in
+# the scraped text (kills LLM hallucinations). Fail-soft everywhere.
+
+_NAME_PAGE_HINTS = ("team", "leadership", "management", "people", "staff",
+                    "board", "executive", "about", "contact", "press",
+                    "διοικηση", "ομαδα", "διευθυν")
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", text)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _parse_json_object(text: str) -> dict | None:
+    """Pull the first JSON object out of an LLM response (handles ``` fences)."""
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?", "", text).strip()
+    text = re.sub(r"```$", "", text).strip()
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except Exception:
+                    return None
+    return None
+
+
+def _corpus_for_prompt(corpus: list[tuple[str, str]], limit: int = 8000) -> str:
+    """Concatenate the scraped pages, name-bearing pages first, labelled + capped.
+    Kept small (~2k tokens) to stay well under Groq's free per-minute token cap."""
+    def rank(item: tuple[str, str]) -> int:
+        return 0 if any(h in item[0].lower() for h in _NAME_PAGE_HINTS) else 1
+
+    chunks: list[str] = []
+    total = 0
+    for url, text in sorted(corpus, key=rank):
+        if not text:
+            continue
+        block = f"[PAGE] {url}\n{text[:3000]}"
+        chunks.append(block)
+        total += len(block)
+        if total >= limit:
+            break
+    return "\n\n".join(chunks)[:limit]
+
+
+def _llm_department_people(domain: str, corpus: list[tuple[str, str]],
+                           dept_names: list[str]) -> dict[str, dict]:
+    """Ask the active LLM (Ollama locally, Groq in the cloud) to name the person
+    in charge of each department, using ONLY the scraped text. Returns
+    {dept: {'name', 'title', 'email'}} for departments where a grounded name was
+    found. Empty dict on any failure."""
+    text = _corpus_for_prompt(corpus)
+    if len(text.strip()) < 200:        # nothing meaningful was scraped
+        return {}
+
+    dept_lines = "\n".join(f'  - "{d}"' for d in dept_names)
+    prompt = f"""You are extracting REAL staff contacts from the website of {domain}.
+Below is text scraped from that company's own pages (team / leadership / management / contact).
+
+For EACH of these departments, identify the specific person in charge or the best point of contact:
+{dept_lines}
+
+Rules:
+- Use ONLY people that literally appear in the text below. NEVER invent or guess a name.
+- Spell each name EXACTLY as written in the text (keep the original alphabet — Greek stays Greek).
+- Include the person's job title and email ONLY if they are shown in the text; otherwise use "".
+- If no person can be identified for a department, set that department to null.
+
+Return ONLY a JSON object, no prose, with one key per department, shaped exactly like:
+{{"Procurement": {{"name": "...", "title": "...", "email": "..."}}, "HR": null}}
+
+TEXT:
+\"\"\"
+{text}
+\"\"\""""
+
+    try:
+        import llm
+        raw = llm.generate(prompt)
+    except Exception as e:
+        print(f"[WARN] department-name LLM pass failed for {domain}: {e}")
+        return {}
+
+    data = _parse_json_object(raw) or {}
+    grounded_corpus = _strip_accents(text).lower()
+    out: dict[str, dict] = {}
+    for dept in dept_names:
+        entry = data.get(dept)
+        if not isinstance(entry, dict):
+            continue
+        name = (entry.get("name") or "").strip()
+        if not name or name.lower() in {"null", "none", "n/a", "na", "unknown", "-"}:
+            continue
+        # Must look like a real person name (2-3 Title-case tokens, no role words
+        # like "Management"/"Team") — rejects slogans/headings the model may emit
+        # (e.g. a tagline "One with the Game" that's technically on the page).
+        if not _looks_like_person_name(name):
+            continue
+        # Anti-hallucination: the name must actually be present in the scraped text.
+        if _strip_accents(name).lower() not in grounded_corpus:
+            continue
+        email = (entry.get("email") or "").strip().lower()
+        if email and (not EMAIL_RE.fullmatch(email) or any(b in email for b in BAD_SUBSTRINGS)):
+            email = ""
+        out[dept] = {
+            "name": name,
+            "title": (entry.get("title") or "").strip(),
+            "email": email,
+        }
+    return out
 
 
 def _departments(domain: str | None, info: dict) -> list[dict]:
@@ -441,6 +572,25 @@ def find_contacts(domain: str | None) -> dict:
     Also extracts person names from email prefixes and page content where possible."""
     info = find_email(domain)
     info["departments"] = _departments(domain, info)
+
+    # LLM pass: read the scraped text and attach the actual person per department.
+    corpus = info.pop("_corpus", [])
+    if LLM_DEPARTMENT_NAMES and domain and corpus:
+        dept_names = [d for d, _ in DEPARTMENTS]
+        found = _llm_department_people(domain, corpus, dept_names)
+        for d in info["departments"]:
+            person = found.get(d["dept"])
+            if not person:
+                continue
+            d["name"] = person["name"]
+            if person.get("title"):
+                d["title"] = person["title"]
+            if person.get("email"):
+                d["email"] = person["email"]   # a real, on-page address beats the guess
+                d["method"] = "scraped-llm"
+            else:
+                # Name found on-site, but only a role@domain guess for the address.
+                d["method"] = "scraped-llm-name"
 
     # Extract contact names from email prefixes and merge them with page-level names.
     info["contact_names"] = {}

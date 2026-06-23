@@ -52,6 +52,7 @@ EMAIL_TEMPLATE = """<!DOCTYPE html>
   .dept {{ font-size:12.5px; line-height:1.5; margin:2px 0; color:#33414f; }}
   .dept b {{ display:inline-block; min-width:150px; color:#0b2e4f; }}
   .dept a {{ color:#1a56c4; text-decoration:none; }}
+  .dept-person {{ color:#0b2e4f; font-weight:600; }}
   .footer {{ padding:16px 30px; background:#fafbfc; text-align:center; font-size:11.5px; color:#9aa6b2; }}
 </style></head><body>
 <div class="container">
@@ -62,7 +63,7 @@ EMAIL_TEMPLATE = """<!DOCTYPE html>
   <div class="content">{body}</div>
   <div class="footer">
     Each lead meets ≥1 criterion: recognizable brand, large Greek footprint, major or high-growth Greek company, high Greek revenue, or big workforce.<br>
-    All figures are estimates for GREEK operations only. Department emails are best-effort (mostly role@domain guesses) &amp; unverified — confirm before outreach. · Curated locally via Ollama.
+    All figures are estimates for GREEK operations only. Department contacts are best-effort — names are scraped from the company site where found, otherwise role@domain guesses; all unverified, confirm before outreach. · Curated via Ollama / Groq.
   </div>
 </div></body></html>"""
 
@@ -145,16 +146,30 @@ def _people_html(lead: dict) -> str:
     return '<div class="people"><b>People found:</b>' + "".join(rows) + "</div>"
 
 
+_DEPT_NOTE = {
+    "scraped-llm": "name + email found on site",
+    "scraped-llm-name": "name found on site · email is a guess",
+    "scraped": "found on site",
+}
+
+
 def _departments_html(lead: dict) -> str:
-    """Per-department best-effort contacts (Procurement, HR, FM, Finance, etc.)."""
+    """Per-department best-effort contacts (Procurement, HR, FM, Finance, etc.).
+    Shows the actual person when the LLM found one on the company's site."""
     depts = lead.get("departments") or []
     if not depts:
         return ""
     rows = ""
     for d in depts:
-        note = "found on site" if d.get("method") == "scraped" else "guess — verify"
+        note = _DEPT_NOTE.get(d.get("method", ""), "guess — verify")
+        name = (d.get("name") or "").strip()
+        title = (d.get("title") or "").strip()
+        person_html = ""
+        if name:
+            who = f"{name} — {title}" if title else name
+            person_html = f'<span class="dept-person">{who}</span> · '
         rows += (f'<div class="dept"><b>{d["dept"]}</b>'
-                 f'<a href="mailto:{d["email"]}">{d["email"]}</a> '
+                 f'{person_html}<a href="mailto:{d["email"]}">{d["email"]}</a> '
                  f'<span class="unverified">({note})</span></div>')
     return f'<div class="depts"><div class="depts-h">🎯 Target departments</div>{rows}</div>'
 
